@@ -1,5 +1,6 @@
 use super::*;
 use crate::connection::ConnectionOps;
+use crate::parameters::Parameters;
 use crate::{
     Appearance, Clipboard, DeadKeyStatus, Dimensions, Handled, KeyCode, KeyEvent, Modifiers,
     MouseButtons, MouseCursor, MouseEvent, MouseEventKind, MousePress, Point, RawKeyEvent, Rect,
@@ -7,7 +8,7 @@ use crate::{
 };
 use anyhow::{bail, Context};
 use async_trait::async_trait;
-use config::ConfigHandle;
+use config::{ConfigHandle, RgbColor};
 use lazy_static::lazy_static;
 use promise::Future;
 use raw_window_handle::windows::WindowsHandle;
@@ -34,6 +35,8 @@ use winapi::um::uxtheme::{
 };
 use winapi::um::wingdi::{LOGFONTW, MAKEPOINTS};
 use winapi::um::winuser::*;
+use windows::UI::Color as WUIColor;
+use windows::UI::ViewManagement::{UIColorType, UISettings};
 use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
 
@@ -70,6 +73,14 @@ pub(crate) struct WindowInner {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Window(HWindow);
+
+fn wuicolor_to_rgbcolor(color: WUIColor) -> RgbColor {
+    RgbColor::new_f32(
+        f32::from(color.R) / 255.0,
+        f32::from(color.G) / 255.0,
+        f32::from(color.B) / 255.0,
+    )
+}
 
 fn rect_width(r: &RECT) -> i32 {
     r.right - r.left
@@ -714,71 +725,79 @@ impl WindowOps for Window {
         clipboard_win::set_clipboard_string(&text).ok();
     }
 
-    fn get_title_font_and_point_size(&self) -> Option<(wezterm_font::parser::ParsedFont, f64)> {
-        const TMT_CAPTIONFONT: i32 = 801;
-        const HP_HEADERITEM: i32 = 1;
-        const HIS_NORMAL: i32 = 1;
-
-        unsafe fn populate_log_font(hwnd: HWND, hdc: HDC) -> Option<LOGFONTW> {
-            let mut log_font = LOGFONTW {
-                lfHeight: 0,
-                lfWidth: 0,
-                lfEscapement: 0,
-                lfOrientation: 0,
-                lfWeight: 0,
-                lfItalic: 0,
-                lfUnderline: 0,
-                lfStrikeOut: 0,
-                lfCharSet: 0,
-                lfOutPrecision: 0,
-                lfClipPrecision: 0,
-                lfQuality: 0,
-                lfPitchAndFamily: 0,
-                lfFaceName: [0u16; 32],
-            };
-            let theme = OpenThemeData(
-                hwnd,
-                [
-                    'H' as u16, 'E' as u16, 'A' as u16, 'D' as u16, 'E' as u16, 'R' as u16, 0u16,
-                ]
-                .as_ptr(),
-            );
-            if !theme.is_null() {
-                let res = GetThemeFont(
-                    theme,
-                    hdc,
-                    HP_HEADERITEM,
-                    HIS_NORMAL,
-                    TMT_CAPTIONFONT,
-                    &mut log_font,
-                );
-                if res == S_OK {
-                    CloseThemeData(theme);
-                    return Some(log_font);
-                }
-            }
-
-            let res = GetThemeSysFont(theme, TMT_CAPTIONFONT, &mut log_font);
-            if !theme.is_null() {
-                CloseThemeData(theme);
-            }
-
-            if res == S_OK {
-                Some(log_font)
-            } else {
-                None
-            }
+    fn get_os_parameters(&self, config: &ConfigHandle) -> anyhow::Result<Option<Parameters>> {
+        let hwnd = self.0 .0;
+        if hwnd.is_null() {
+            return Err(anyhow::anyhow!("HWND is null"));
         }
-        unsafe {
-            let hwnd = self.0 .0;
+
+        let title_font = unsafe {
             let hdc = GetDC(hwnd);
-            let result = match populate_log_font(hwnd, hdc) {
-                Some(lf) => wezterm_font::locator::gdi::parse_log_font(&lf, hdc).ok(),
+            if hdc.is_null() {
+                return Err(anyhow::anyhow!("Could not get device context"));
+            }
+            let result = match get_title_log_font(hwnd, hdc) {
+                Some(lf) => Some(wezterm_font::locator::gdi::parse_log_font(&lf, hdc)?),
                 None => None,
             };
             ReleaseDC(hwnd, hdc);
             result
+        };
+
+        let has_focus = !unsafe { GetFocus() }.is_null();
+        let settings = UISettings::new()?;
+        let top_border_color = if has_focus {
+            wuicolor_to_rgbcolor(settings.GetColorValue(UIColorType::Accent)?)
+        } else {
+            // The real inactive border is translucent, so everyone
+            // fakes it with a grayish color
+            RgbColor::new_f32(0.47, 0.47, 0.47)
+        };
+
+        Ok(Some(Parameters::new(
+            crate::parameters::TitleBar::new(0.0, 0.0, None, title_font),
+            Some(crate::parameters::Border::new(
+                if config.window_decorations == WindowDecorations::RESIZE {
+                    1.0
+                } else {
+                    0.0
+                },
+                0.0,
+                0.0,
+                0.0,
+                top_border_color,
+            )),
+        )))
+    }
+}
+
+unsafe fn get_title_log_font(hwnd: HWND, hdc: HDC) -> Option<LOGFONTW> {
+    let mut log_font = LOGFONTW::default();
+    let theme = OpenThemeData(hwnd, wide_string("HEADER").as_ptr());
+    if !theme.is_null() {
+        let res = GetThemeFont(
+            theme,
+            hdc,
+            extra_constants::HP_HEADERITEM,
+            extra_constants::HIS_NORMAL,
+            extra_constants::TMT_CAPTIONFONT,
+            &mut log_font,
+        );
+        if res == S_OK {
+            CloseThemeData(theme);
+            return Some(log_font);
         }
+    }
+
+    let res = GetThemeSysFont(theme, extra_constants::TMT_CAPTIONFONT, &mut log_font);
+    if !theme.is_null() {
+        CloseThemeData(theme);
+    }
+
+    if res == S_OK {
+        Some(log_font)
+    } else {
+        None
     }
 }
 

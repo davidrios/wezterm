@@ -284,6 +284,7 @@ pub struct TermWindow {
     pub window: Option<Window>,
     pub config: ConfigHandle,
     pub config_overrides: serde_json::Value,
+    os_parameters: Option<parameters::Parameters>,
     /// When we most recently received keyboard focus
     focused: Option<Instant>,
     fonts: Rc<FontConfiguration>,
@@ -686,6 +687,7 @@ impl TermWindow {
 
         let myself = Self {
             config_subscription: None,
+            os_parameters: None,
             gl: None,
             window: None,
             window_background,
@@ -775,7 +777,11 @@ impl TermWindow {
             },
         )
         .await?;
-        tw.borrow_mut().window.replace(window.clone());
+        {
+            let mut myself = tw.borrow_mut();
+            myself.window.replace(window.clone());
+            myself.os_parameters = window.get_os_parameters(&config).unwrap_or(None);
+        }
 
         Self::apply_icon(&window)?;
         Self::setup_clipboard(&window, mux_window_id);

@@ -212,6 +212,19 @@ impl super::TermWindow {
 
         frame.clear_color(0., 0., 0., 0.);
 
+        self.os_parameters = match self
+            .window
+            .as_ref()
+            .unwrap()
+            .get_os_parameters(&self.config)
+        {
+            Ok(os_parameters) => os_parameters,
+            Err(_) => {
+                log::warn!("Error while getting OS parameters");
+                None
+            }
+        };
+
         'pass: for pass in 0.. {
             match self.paint_opengl_pass() {
                 Ok(_) => {
@@ -920,6 +933,56 @@ impl super::TermWindow {
         Ok(())
     }
 
+    fn paint_window_borders(&mut self) -> anyhow::Result<()> {
+        if let Some(ref os_params) = self.os_parameters {
+            if let Some(border_to_draw) = os_params.window_border_to_draw() {
+                let gl_state = self.render_state.as_ref().unwrap();
+                let vb = &gl_state.vb[1];
+                let mut vb_mut = vb.current_vb_mut();
+                let mut layer1 = vb.map(&mut vb_mut);
+
+                let background = rgbcolor_to_window_color(border_to_draw.color());
+
+                let height = self.dimensions.pixel_height as f32;
+                let width = self.dimensions.pixel_width as f32;
+
+                if border_to_draw.top() > 0.0 {
+                    self.filled_rectangle(
+                        &mut layer1,
+                        euclid::rect(0., 0., width, border_to_draw.top()),
+                        background,
+                    )?;
+                }
+
+                if border_to_draw.left() > 0.0 {
+                    self.filled_rectangle(
+                        &mut layer1,
+                        euclid::rect(0., 0., border_to_draw.left(), height),
+                        background,
+                    )?;
+                }
+
+                if border_to_draw.bottom() > 0.0 {
+                    self.filled_rectangle(
+                        &mut layer1,
+                        euclid::rect(0., height - border_to_draw.bottom(), width, height),
+                        background,
+                    )?;
+                }
+
+                if border_to_draw.right() > 0.0 {
+                    self.filled_rectangle(
+                        &mut layer1,
+                        euclid::rect(width - border_to_draw.right(), 0., width, height),
+                        background,
+                    )?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn paint_pane_opengl(
         &mut self,
         pos: &PositionedPane,
@@ -1552,6 +1615,8 @@ impl super::TermWindow {
         if self.show_tab_bar {
             self.paint_tab_bar()?;
         }
+
+        self.paint_window_borders()?;
 
         Ok(())
     }
