@@ -8,7 +8,7 @@ use crate::{
 };
 use anyhow::{bail, Context};
 use async_trait::async_trait;
-use config::{ConfigHandle, RgbColor};
+use config::ConfigHandle;
 use lazy_static::lazy_static;
 use promise::Future;
 use raw_window_handle::windows::WindowsHandle;
@@ -23,6 +23,7 @@ use std::io::{self, Error as IoError};
 use std::os::windows::ffi::OsStringExt;
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
+use wezterm_color_types::LinearRgba;
 use wezterm_font::FontConfiguration;
 use winapi::shared::minwindef::*;
 use winapi::shared::ntdef::*;
@@ -74,12 +75,8 @@ pub(crate) struct WindowInner {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct Window(HWindow);
 
-fn wuicolor_to_rgbcolor(color: WUIColor) -> RgbColor {
-    RgbColor::new_f32(
-        f32::from(color.R) / 255.0,
-        f32::from(color.G) / 255.0,
-        f32::from(color.B) / 255.0,
-    )
+fn wuicolor_to_linearrgba(color: WUIColor) -> LinearRgba {
+    LinearRgba::with_srgba(color.R, color.G, color.B, 255)
 }
 
 fn rect_width(r: &RECT) -> i32 {
@@ -752,11 +749,11 @@ impl WindowOps for Window {
         let has_focus = !unsafe { GetFocus() }.is_null();
         let settings = UISettings::new()?;
         let top_border_color = if has_focus {
-            wuicolor_to_rgbcolor(settings.GetColorValue(UIColorType::Accent)?)
+            wuicolor_to_linearrgba(settings.GetColorValue(UIColorType::Accent)?)
         } else {
             // The real inactive border is translucent, so everyone
             // fakes it with a grayish color
-            RgbColor::new_f32(0.47, 0.47, 0.47)
+            LinearRgba(0.47, 0.47, 0.47, 1.0)
         };
 
         Ok(Some(Parameters {

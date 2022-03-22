@@ -1,4 +1,4 @@
-use config::RgbColor;
+use wezterm_color_types::LinearRgba;
 use wezterm_font::parser::ParsedFont;
 
 pub struct TitleBar {
@@ -13,7 +13,7 @@ pub struct Border {
     pub left: f32,
     pub bottom: f32,
     pub right: f32,
-    pub color: RgbColor,
+    pub color: LinearRgba,
 }
 
 pub struct Parameters {

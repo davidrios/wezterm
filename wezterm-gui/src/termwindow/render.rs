@@ -928,8 +928,6 @@ impl super::TermWindow {
                 let mut vb_mut = vb.current_vb_mut();
                 let mut layer1 = vb.map(&mut vb_mut);
 
-                let background = rgbcolor_to_window_color(border_dimensions.color);
-
                 let height = self.dimensions.pixel_height as f32;
                 let width = self.dimensions.pixel_width as f32;
 
@@ -937,7 +935,7 @@ impl super::TermWindow {
                     self.filled_rectangle(
                         &mut layer1,
                         euclid::rect(0., 0., width, border_dimensions.top),
-                        background,
+                        border_dimensions.color,
                     )?;
                 }
 
@@ -945,7 +943,7 @@ impl super::TermWindow {
                     self.filled_rectangle(
                         &mut layer1,
                         euclid::rect(0., 0., border_dimensions.left, height),
-                        background,
+                        border_dimensions.color,
                     )?;
                 }
 
@@ -953,7 +951,7 @@ impl super::TermWindow {
                     self.filled_rectangle(
                         &mut layer1,
                         euclid::rect(0., height - border_dimensions.bottom, width, height),
-                        background,
+                        border_dimensions.color,
                     )?;
                 }
 
@@ -961,7 +959,7 @@ impl super::TermWindow {
                     self.filled_rectangle(
                         &mut layer1,
                         euclid::rect(width - border_dimensions.right, 0., width, height),
-                        background,
+                        border_dimensions.color,
                     )?;
                 }
             }
