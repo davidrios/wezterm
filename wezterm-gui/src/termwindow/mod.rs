@@ -443,6 +443,8 @@ impl TermWindow {
             }
         }
 
+        self.os_parameters = window.get_os_parameters(&self.config).unwrap_or(None);
+
         window.show();
 
         if self.render_state.is_none() {
@@ -777,11 +779,7 @@ impl TermWindow {
             },
         )
         .await?;
-        {
-            let mut myself = tw.borrow_mut();
-            myself.window.replace(window.clone());
-            myself.os_parameters = window.get_os_parameters(&config).unwrap_or(None);
-        }
+        tw.borrow_mut().window.replace(window.clone());
 
         Self::apply_icon(&window)?;
         Self::setup_clipboard(&window, mux_window_id);
