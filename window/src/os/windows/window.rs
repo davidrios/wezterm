@@ -276,7 +276,12 @@ fn apply_decoration_immediate(hwnd: HWND, decorations: WindowDecorations) {
             0,
             0,
             0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED,
+            SWP_NOACTIVATE
+                | SWP_NOMOVE
+                | SWP_NOSIZE
+                | SWP_NOZORDER
+                | SWP_NOOWNERZORDER
+                | SWP_FRAMECHANGED,
         );
     }
 }
@@ -1087,10 +1092,12 @@ unsafe fn wm_set_focus(
     _lparam: LPARAM,
 ) -> Option<LRESULT> {
     if let Some(inner) = rc_from_hwnd(hwnd) {
+        let mut inner = inner.borrow_mut();
+        inner.events.dispatch(WindowEvent::FocusChanged(true));
+        let appearance = inner.appearance;
         inner
-            .borrow_mut()
             .events
-            .dispatch(WindowEvent::FocusChanged(true));
+            .dispatch(WindowEvent::AppearanceChanged(appearance));
     }
     None
 }
@@ -1102,10 +1109,12 @@ unsafe fn wm_kill_focus(
     _lparam: LPARAM,
 ) -> Option<LRESULT> {
     if let Some(inner) = rc_from_hwnd(hwnd) {
+        let mut inner = inner.borrow_mut();
+        inner.events.dispatch(WindowEvent::FocusChanged(false));
+        let appearance = inner.appearance;
         inner
-            .borrow_mut()
             .events
-            .dispatch(WindowEvent::FocusChanged(false));
+            .dispatch(WindowEvent::AppearanceChanged(appearance));
     }
     None
 }

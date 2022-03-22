@@ -212,19 +212,6 @@ impl super::TermWindow {
 
         frame.clear_color(0., 0., 0., 0.);
 
-        self.os_parameters = match self
-            .window
-            .as_ref()
-            .unwrap()
-            .get_os_parameters(&self.config)
-        {
-            Ok(os_parameters) => os_parameters,
-            Err(_) => {
-                log::warn!("Error while getting OS parameters");
-                None
-            }
-        };
-
         'pass: for pass in 0.. {
             match self.paint_opengl_pass() {
                 Ok(_) => {

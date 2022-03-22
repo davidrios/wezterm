@@ -1429,6 +1429,14 @@ impl TermWindow {
         };
 
         if let Some(window) = self.window.as_ref().map(|w| w.clone()) {
+            self.os_parameters = match window.get_os_parameters(&config) {
+                Ok(os_parameters) => os_parameters,
+                Err(_) => {
+                    log::warn!("Error while getting OS parameters");
+                    None
+                }
+            };
+
             self.apply_scale_change(&dimensions, self.fonts.get_font_scale(), &window);
             self.apply_dimensions(&dimensions, None, &window);
             window.config_did_change(&config);
