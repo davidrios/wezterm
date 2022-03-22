@@ -754,20 +754,25 @@ impl WindowOps for Window {
             RgbColor::new_f32(0.47, 0.47, 0.47)
         };
 
-        Ok(Some(Parameters::new(
-            crate::parameters::TitleBar::new(0.0, 0.0, None, title_font),
-            Some(crate::parameters::Border::new(
-                if config.window_decorations == WindowDecorations::RESIZE {
+        Ok(Some(Parameters {
+            title_bar: crate::parameters::TitleBar {
+                padding_left: 0.0,
+                padding_right: 0.0,
+                height: None,
+                font_and_size: title_font,
+            },
+            border_dimensions: Some(crate::parameters::Border {
+                top: if config.window_decorations == WindowDecorations::RESIZE {
                     1.0
                 } else {
                     0.0
                 },
-                0.0,
-                0.0,
-                0.0,
-                top_border_color,
-            )),
-        )))
+                left: 0.0,
+                bottom: 0.0,
+                right: 0.0,
+                color: top_border_color,
+            }),
+        }))
     }
 }
 

@@ -935,45 +935,45 @@ impl super::TermWindow {
 
     fn paint_window_borders(&mut self) -> anyhow::Result<()> {
         if let Some(ref os_params) = self.os_parameters {
-            if let Some(border_to_draw) = os_params.window_border_to_draw() {
+            if let Some(ref border_dimensions) = os_params.border_dimensions {
                 let gl_state = self.render_state.as_ref().unwrap();
                 let vb = &gl_state.vb[1];
                 let mut vb_mut = vb.current_vb_mut();
                 let mut layer1 = vb.map(&mut vb_mut);
 
-                let background = rgbcolor_to_window_color(border_to_draw.color());
+                let background = rgbcolor_to_window_color(border_dimensions.color);
 
                 let height = self.dimensions.pixel_height as f32;
                 let width = self.dimensions.pixel_width as f32;
 
-                if border_to_draw.top() > 0.0 {
+                if border_dimensions.top > 0.0 {
                     self.filled_rectangle(
                         &mut layer1,
-                        euclid::rect(0., 0., width, border_to_draw.top()),
+                        euclid::rect(0., 0., width, border_dimensions.top),
                         background,
                     )?;
                 }
 
-                if border_to_draw.left() > 0.0 {
+                if border_dimensions.left > 0.0 {
                     self.filled_rectangle(
                         &mut layer1,
-                        euclid::rect(0., 0., border_to_draw.left(), height),
+                        euclid::rect(0., 0., border_dimensions.left, height),
                         background,
                     )?;
                 }
 
-                if border_to_draw.bottom() > 0.0 {
+                if border_dimensions.bottom > 0.0 {
                     self.filled_rectangle(
                         &mut layer1,
-                        euclid::rect(0., height - border_to_draw.bottom(), width, height),
+                        euclid::rect(0., height - border_dimensions.bottom, width, height),
                         background,
                     )?;
                 }
 
-                if border_to_draw.right() > 0.0 {
+                if border_dimensions.right > 0.0 {
                     self.filled_rectangle(
                         &mut layer1,
-                        euclid::rect(width - border_to_draw.right(), 0., width, height),
+                        euclid::rect(width - border_dimensions.right, 0., width, height),
                         background,
                     )?;
                 }
