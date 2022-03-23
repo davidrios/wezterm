@@ -931,34 +931,38 @@ impl super::TermWindow {
                 let height = self.dimensions.pixel_height as f32;
                 let width = self.dimensions.pixel_width as f32;
 
-                if border_dimensions.top > 0.0 {
+                let border_top = border_dimensions.top.get() as f32;
+                if border_top > 0.0 {
                     self.filled_rectangle(
                         &mut layer1,
-                        euclid::rect(0., 0., width, border_dimensions.top),
+                        euclid::rect(0.0, 0.0, width, border_top),
                         border_dimensions.color,
                     )?;
                 }
 
-                if border_dimensions.left > 0.0 {
+                let border_left = border_dimensions.left.get() as f32;
+                if border_left > 0.0 {
                     self.filled_rectangle(
                         &mut layer1,
-                        euclid::rect(0., 0., border_dimensions.left, height),
+                        euclid::rect(0.0, 0.0, border_left, height),
                         border_dimensions.color,
                     )?;
                 }
 
-                if border_dimensions.bottom > 0.0 {
+                let border_bottom = border_dimensions.bottom.get() as f32;
+                if border_bottom > 0.0 {
                     self.filled_rectangle(
                         &mut layer1,
-                        euclid::rect(0., height - border_dimensions.bottom, width, height),
+                        euclid::rect(0.0, height - border_bottom, width, height),
                         border_dimensions.color,
                     )?;
                 }
 
-                if border_dimensions.right > 0.0 {
+                let border_right = border_dimensions.right.get() as f32;
+                if border_right > 0.0 {
                     self.filled_rectangle(
                         &mut layer1,
-                        euclid::rect(width - border_dimensions.right, 0., width, height),
+                        euclid::rect(width - border_right, 0.0, width, height),
                         border_dimensions.color,
                     )?;
                 }

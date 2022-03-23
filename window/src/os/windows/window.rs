@@ -2,9 +2,10 @@ use super::*;
 use crate::connection::ConnectionOps;
 use crate::parameters::Parameters;
 use crate::{
-    Appearance, Clipboard, DeadKeyStatus, Dimensions, Handled, KeyCode, KeyEvent, Modifiers,
-    MouseButtons, MouseCursor, MouseEvent, MouseEventKind, MousePress, Point, RawKeyEvent, Rect,
-    ScreenPoint, WindowDecorations, WindowEvent, WindowEventSender, WindowOps, WindowState,
+    Appearance, Clipboard, DeadKeyStatus, Dimensions, Handled, KeyCode, KeyEvent, Length,
+    Modifiers, MouseButtons, MouseCursor, MouseEvent, MouseEventKind, MousePress, Point,
+    RawKeyEvent, Rect, ScreenPoint, WindowDecorations, WindowEvent, WindowEventSender, WindowOps,
+    WindowState,
 };
 use anyhow::{bail, Context};
 use async_trait::async_trait;
@@ -797,26 +798,26 @@ impl WindowOps for Window {
             }
         };
 
-        const BASE_BORDER: f32 = 0.0;
+        const BASE_BORDER: Length = Length::new(0);
         let is_resize = config.window_decorations == WindowDecorations::RESIZE;
 
         let is_win10 = is_win10();
         Ok(Some(Parameters {
             title_bar: crate::parameters::TitleBar {
-                padding_left: 0.0,
-                padding_right: 0.0,
+                padding_left: Length::new(0),
+                padding_right: Length::new(0),
                 height: None,
                 font_and_size: title_font,
             },
             border_dimensions: Some(crate::parameters::Border {
                 top: if is_resize && !is_win10 && !is_maximized && !is_full_screen {
-                    BASE_BORDER + 1.0
+                    BASE_BORDER + Length::new(1)
                 } else {
                     BASE_BORDER
                 },
                 left: BASE_BORDER,
                 bottom: if is_resize && is_win10 && !is_maximized && !is_full_screen {
-                    BASE_BORDER + 2.0
+                    BASE_BORDER + Length::new(2)
                 } else {
                     BASE_BORDER
                 },
