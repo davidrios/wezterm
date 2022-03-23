@@ -23,6 +23,7 @@ use std::io::{self, Error as IoError};
 use std::os::windows::ffi::OsStringExt;
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
+use std::time::Duration;
 use wezterm_color_types::LinearRgba;
 use wezterm_font::FontConfiguration;
 use winapi::shared::minwindef::*;
@@ -587,6 +588,10 @@ impl WindowInner {
                 })
                 .detach();
             }
+            promise::spawn::spawn(async move {
+                PostMessageW(hwnd, extra_constants::UM_APPEARANCE_CHANGED, 0, 0);
+            })
+            .detach();
         }
     }
 }
@@ -743,6 +748,26 @@ impl WindowOps for Window {
         let has_focus = !unsafe { GetFocus() }.is_null();
         let is_maximized = window_is_maximized(hwnd);
 
+        let is_full_screen = unsafe {
+            let mut mi = MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            if GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mut mi)
+                == winapi::shared::minwindef::TRUE
+            {
+                let mut client_rect = RECT::default();
+                if GetClientRect(hwnd, &mut client_rect) == winapi::shared::minwindef::TRUE {
+                    client_rect.right >= mi.rcMonitor.right - mi.rcMonitor.left
+                        && client_rect.bottom >= mi.rcMonitor.bottom - mi.rcMonitor.top
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+
         let title_font = unsafe {
             let hdc = GetDC(hwnd);
             if hdc.is_null() {
@@ -783,17 +808,13 @@ impl WindowOps for Window {
                 font_and_size: title_font,
             },
             border_dimensions: Some(crate::parameters::Border {
-                top: if is_resize && is_win10 {
-                    BASE_BORDER
+                top: if is_resize && !is_win10 && !is_maximized && !is_full_screen {
+                    BASE_BORDER + 1.0
                 } else {
-                    if is_maximized {
-                        BASE_BORDER
-                    } else {
-                        BASE_BORDER + 1.0
-                    }
+                    BASE_BORDER
                 },
                 left: BASE_BORDER,
-                bottom: if is_resize && is_win10 && !is_maximized {
+                bottom: if is_resize && is_win10 && !is_maximized && !is_full_screen {
                     BASE_BORDER + 2.0
                 } else {
                     BASE_BORDER
@@ -1104,6 +1125,17 @@ fn apply_theme(hwnd: HWND) -> Option<LRESULT> {
         }
     }
 
+    None
+}
+
+fn dispatch_appearance_changed(hwnd: HWND) -> Option<LRESULT> {
+    if let Some(inner) = rc_from_hwnd(hwnd) {
+        let mut inner = inner.borrow_mut();
+        let appearance = inner.appearance;
+        inner
+            .events
+            .dispatch(WindowEvent::AppearanceChanged(appearance));
+    }
     None
 }
 
@@ -2232,6 +2264,7 @@ unsafe fn do_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> 
             }
             None
         }
+        extra_constants::UM_APPEARANCE_CHANGED => dispatch_appearance_changed(hwnd),
         _ => None,
     }
 }
