@@ -23,7 +23,6 @@ use std::io::{self, Error as IoError};
 use std::os::windows::ffi::OsStringExt;
 use std::ptr::{null, null_mut};
 use std::rc::Rc;
-use std::time::Duration;
 use wezterm_color_types::LinearRgba;
 use wezterm_font::FontConfiguration;
 use winapi::shared::minwindef::*;
@@ -784,10 +783,18 @@ impl WindowOps for Window {
             if use_accent == 1 {
                 wuicolor_to_linearrgba(settings.GetColorValue(UIColorType::Accent)?)
             } else {
-                LinearRgba(0.01, 0.01, 0.01, 0.67)
+                if is_win10() {
+                    LinearRgba(0.01, 0.01, 0.01, 0.67)
+                } else {
+                    LinearRgba(0.026, 0.026, 0.026, 0.5)
+                }
             }
         } else {
-            LinearRgba(0.024, 0.024, 0.024, 0.5)
+            if is_win10() {
+                LinearRgba(0.024, 0.024, 0.024, 0.5)
+            } else {
+                LinearRgba(0.028, 0.028, 0.028, 0.5)
+            }
         };
 
         const BASE_BORDER: f32 = 0.0;
