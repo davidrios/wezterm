@@ -32,7 +32,7 @@ use winapi::shared::windef::*;
 use winapi::shared::winerror::S_OK;
 use winapi::um::imm::*;
 use winapi::um::libloaderapi::GetModuleHandleW;
-use winapi::um::sysinfoapi::GetVersionExW;
+use winapi::um::sysinfoapi::{GetTickCount, GetVersionExW};
 use winapi::um::uxtheme::{
     CloseThemeData, GetThemeFont, GetThemeSysFont, OpenThemeData, SetWindowTheme,
 };
@@ -311,12 +311,6 @@ impl Window {
         height: usize,
         lparam: *const RefCell<WindowInner>,
     ) -> anyhow::Result<HWND> {
-        // Jamming this in here; it should really live in the application manifest,
-        // but having it here means that we don't have to create a manifest
-        unsafe {
-            SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-        }
-
         let class_name = wide_string(class_name);
         let h_inst = unsafe { GetModuleHandleW(null()) };
         let class = WNDCLASSW {
@@ -1025,6 +1019,7 @@ fn is_win10() -> bool {
         dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as _,
         ..Default::default()
     };
+
     if unsafe { GetVersionExW(&osver as *const _ as _) } == winapi::shared::minwindef::TRUE {
         osver.dwBuildNumber < 22000
     } else {
@@ -1879,7 +1874,6 @@ impl KeyboardLayoutInfo {
 
 /// Generate a MSG and call TranslateMessage upon it
 unsafe fn translate_message(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) {
-    use winapi::um::sysinfoapi::GetTickCount;
     TranslateMessage(&MSG {
         hwnd,
         message: msg,
