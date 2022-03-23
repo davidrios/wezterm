@@ -31,10 +31,12 @@ use winapi::shared::windef::*;
 use winapi::shared::winerror::S_OK;
 use winapi::um::imm::*;
 use winapi::um::libloaderapi::GetModuleHandleW;
+use winapi::um::sysinfoapi::GetVersionExW;
 use winapi::um::uxtheme::{
     CloseThemeData, GetThemeFont, GetThemeSysFont, OpenThemeData, SetWindowTheme,
 };
 use winapi::um::wingdi::{LOGFONTW, MAKEPOINTS};
+use winapi::um::winnt::OSVERSIONINFOW;
 use winapi::um::winuser::*;
 use windows::UI::Color as WUIColor;
 use windows::UI::ViewManagement::{UIColorType, UISettings};
@@ -55,6 +57,7 @@ unsafe impl Sync for HWindow {}
 pub(crate) struct WindowInner {
     /// Non-owning reference to the window handle
     hwnd: HWindow,
+    is_win10: bool,
     events: WindowEventSender,
     gl_state: Option<Rc<glium::backend::Context>>,
     /// Fraction of mouse scroll
@@ -65,6 +68,7 @@ pub(crate) struct WindowInner {
     in_size_move: bool,
     dead_pending: Option<(Modifiers, u32)>,
     saved_placement: Option<WINDOWPLACEMENT>,
+    last_resize_type: WPARAM,
 
     keyboard_info: KeyboardLayoutInfo,
     appearance: Appearance,
@@ -416,8 +420,10 @@ impl Window {
             None => config::configuration(),
         };
         let appearance = get_appearance();
+
         let inner = Rc::new(RefCell::new(WindowInner {
             hwnd: HWindow(null_mut()),
+            is_win10: is_win10(),
             appearance,
             events,
             gl_state: None,
@@ -428,6 +434,7 @@ impl Window {
             in_size_move: false,
             dead_pending: None,
             saved_placement: None,
+            last_resize_type: SIZE_RESTORED,
             config: config.clone(),
         }));
 
@@ -733,6 +740,9 @@ impl WindowOps for Window {
             return Err(anyhow::anyhow!("HWND is null"));
         }
 
+        let has_focus = !unsafe { GetFocus() }.is_null();
+        let is_maximized = window_is_maximized(hwnd);
+
         let title_font = unsafe {
             let hdc = GetDC(hwnd);
             if hdc.is_null() {
@@ -746,16 +756,25 @@ impl WindowOps for Window {
             result
         };
 
-        let has_focus = !unsafe { GetFocus() }.is_null();
+        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+        let use_accent = hkcu
+            .open_subkey("SOFTWARE\\Microsoft\\Windows\\DWM")?
+            .get_value::<u32, _>("ColorPrevalence")?;
         let settings = UISettings::new()?;
         let top_border_color = if has_focus {
-            wuicolor_to_linearrgba(settings.GetColorValue(UIColorType::Accent)?)
+            if use_accent == 1 {
+                wuicolor_to_linearrgba(settings.GetColorValue(UIColorType::Accent)?)
+            } else {
+                LinearRgba(0.01, 0.01, 0.01, 0.67)
+            }
         } else {
-            // The real inactive border is translucent, so everyone
-            // fakes it with a grayish color
-            LinearRgba(0.47, 0.47, 0.47, 1.0)
+            LinearRgba(0.024, 0.024, 0.024, 0.5)
         };
 
+        const BASE_BORDER: f32 = 0.0;
+        let is_resize = config.window_decorations == WindowDecorations::RESIZE;
+
+        let is_win10 = is_win10();
         Ok(Some(Parameters {
             title_bar: crate::parameters::TitleBar {
                 padding_left: 0.0,
@@ -764,14 +783,22 @@ impl WindowOps for Window {
                 font_and_size: title_font,
             },
             border_dimensions: Some(crate::parameters::Border {
-                top: if config.window_decorations == WindowDecorations::RESIZE {
-                    1.0
+                top: if is_resize && is_win10 {
+                    BASE_BORDER
                 } else {
-                    0.0
+                    if is_maximized {
+                        BASE_BORDER
+                    } else {
+                        BASE_BORDER + 1.0
+                    }
                 },
-                left: 0.0,
-                bottom: 0.0,
-                right: 0.0,
+                left: BASE_BORDER,
+                bottom: if is_resize && is_win10 && !is_maximized {
+                    BASE_BORDER + 2.0
+                } else {
+                    BASE_BORDER
+                },
+                right: BASE_BORDER,
                 color: top_border_color,
             }),
         }))
@@ -861,10 +888,22 @@ unsafe fn wm_nccalcsize(hwnd: HWND, _msg: UINT, wparam: WPARAM, lparam: LPARAM) 
 
             requested_client_rect.right -= frame_x + padding;
             requested_client_rect.left += frame_x + padding;
-            requested_client_rect.bottom -= frame_y + padding;
 
-            if window_is_maximized(hwnd) {
-                requested_client_rect.top += padding + 2;
+            // Handle bugged top window border on Windows 10
+            if inner.is_win10 {
+                if window_is_maximized(hwnd) {
+                    requested_client_rect.top += frame_y + padding;
+                    requested_client_rect.bottom -= frame_y + padding;
+                } else {
+                    requested_client_rect.top += 1;
+                    requested_client_rect.bottom -= frame_y - padding;
+                }
+            } else {
+                requested_client_rect.bottom -= frame_y + padding;
+
+                if window_is_maximized(hwnd) {
+                    requested_client_rect.top += frame_y + padding;
+                }
             }
         }
 
@@ -903,14 +942,42 @@ unsafe fn wm_nchittest(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) ->
         // The adjustment in NCCALCSIZE messes with the detection
         // of the top hit area so manually fixing that.
         let dpi = GetDpiForWindow(hwnd);
+        let frame_x = GetSystemMetricsForDpi(SM_CXFRAME, dpi) as isize;
         let frame_y = GetSystemMetricsForDpi(SM_CYFRAME, dpi) as isize;
+        let padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi) as isize;
 
         let coords = mouse_coords(lparam);
         let cursor_point = screen_to_client(hwnd, ScreenPoint::new(coords.x, coords.y));
+        let is_maximized = window_is_maximized(hwnd);
 
-        // check if in resize area
-        if cursor_point.y >= 0 && cursor_point.y < frame_y {
-            return Some(HTTOP);
+        // check if mouse is in any of the resize areas (HTTOP, HTBOTTOM, etc)
+
+        let mut client_rect = RECT::default();
+        let client_rect_is_valid =
+            GetClientRect(hwnd, &mut client_rect) == winapi::shared::minwindef::TRUE;
+
+        // Since we are eating the bottom window frame to deal with a Windows 10 bug,
+        // we detect resizing in the window client area as a workaround
+        if !is_maximized && inner.is_win10 && client_rect_is_valid {
+            if cursor_point.y >= (client_rect.bottom as isize) - (frame_y + padding) {
+                if cursor_point.x <= (frame_x + padding) {
+                    return Some(HTBOTTOMLEFT);
+                } else if cursor_point.x >= (client_rect.right as isize) - (frame_x + padding) {
+                    return Some(HTBOTTOMRIGHT);
+                } else {
+                    return Some(HTBOTTOM);
+                }
+            }
+        }
+
+        if !is_maximized && cursor_point.y >= 0 && cursor_point.y < frame_y {
+            if cursor_point.x <= (frame_x + padding) {
+                return Some(HTTOPLEFT);
+            } else if cursor_point.x >= (client_rect.right as isize) - (frame_x + padding) {
+                return Some(HTTOPRIGHT);
+            } else {
+                return Some(HTTOP);
+            }
         }
 
         return Some(HTCLIENT);
@@ -929,6 +996,18 @@ fn window_is_maximized(hwnd: HWND) -> bool {
         false
     } else {
         placement.showCmd == SW_SHOWMAXIMIZED as u32
+    }
+}
+
+fn is_win10() -> bool {
+    let osver = OSVERSIONINFOW {
+        dwOSVersionInfoSize: std::mem::size_of::<OSVERSIONINFOW>() as _,
+        ..Default::default()
+    };
+    if unsafe { GetVersionExW(&osver as *const _ as _) } == winapi::shared::minwindef::TRUE {
+        osver.dwBuildNumber < 22000
+    } else {
+        true
     }
 }
 
@@ -1060,6 +1139,23 @@ unsafe fn wm_windowposchanged(
     // let pos = &*(lparam as *const WINDOWPOS);
     wm_size(hwnd, 0, 0, 0)?;
     Some(0)
+}
+
+unsafe fn wm_sizeraw(hwnd: HWND, _msg: UINT, wparam: WPARAM, _lparam: LPARAM) -> Option<LRESULT> {
+    if wparam == SIZE_RESTORED || wparam == SIZE_MAXIMIZED {
+        if let Some(inner) = rc_from_hwnd(hwnd) {
+            let mut inner = inner.borrow_mut();
+            if inner.last_resize_type != wparam {
+                inner.last_resize_type = wparam;
+                let appearance = inner.appearance;
+                inner
+                    .events
+                    .dispatch(WindowEvent::AppearanceChanged(appearance));
+            }
+        }
+    }
+
+    None
 }
 
 unsafe fn wm_size(hwnd: HWND, _msg: UINT, _wparam: WPARAM, _lparam: LPARAM) -> Option<LRESULT> {
@@ -2106,6 +2202,7 @@ unsafe fn do_wnd_proc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> 
         WM_NCCALCSIZE => wm_nccalcsize(hwnd, msg, wparam, lparam),
         WM_NCHITTEST => wm_nchittest(hwnd, msg, wparam, lparam),
         WM_PAINT => wm_paint(hwnd, msg, wparam, lparam),
+        WM_SIZE => wm_sizeraw(hwnd, msg, wparam, lparam),
         WM_ENTERSIZEMOVE | WM_EXITSIZEMOVE => wm_enter_exit_size_move(hwnd, msg, wparam, lparam),
         WM_WINDOWPOSCHANGED => wm_windowposchanged(hwnd, msg, wparam, lparam),
         WM_SETFOCUS => wm_set_focus(hwnd, msg, wparam, lparam),
