@@ -980,15 +980,17 @@ unsafe fn wm_nchittest(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) ->
 
         // Since we are eating the bottom window frame to deal with a Windows 10 bug,
         // we detect resizing in the window client area as a workaround
-        if !is_maximized && inner.is_win10 && client_rect_is_valid {
-            if cursor_point.y >= (client_rect.bottom as isize) - (frame_y + padding) {
-                if cursor_point.x <= (frame_x + padding) {
-                    return Some(HTBOTTOMLEFT);
-                } else if cursor_point.x >= (client_rect.right as isize) - (frame_x + padding) {
-                    return Some(HTBOTTOMRIGHT);
-                } else {
-                    return Some(HTBOTTOM);
-                }
+        if !is_maximized
+            && inner.is_win10
+            && client_rect_is_valid
+            && cursor_point.y >= (client_rect.bottom as isize) - (frame_y + padding)
+        {
+            if cursor_point.x <= (frame_x + padding) {
+                return Some(HTBOTTOMLEFT);
+            } else if cursor_point.x >= (client_rect.right as isize) - (frame_x + padding) {
+                return Some(HTBOTTOMRIGHT);
+            } else {
+                return Some(HTBOTTOM);
             }
         }
 
