@@ -1,4 +1,4 @@
-use crate::termwindow::TermWindowNotif;
+use crate::termwindow::{BaseTermWindow, TermWindowNotif};
 use crate::TermWindow;
 use config::keyassignment::{ClipboardCopyDestination, ClipboardPasteSource};
 use mux::pane::Pane;

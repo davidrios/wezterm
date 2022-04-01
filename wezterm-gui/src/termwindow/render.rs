@@ -6,9 +6,10 @@ use crate::glyphcache::{CachedGlyph, GlyphCache};
 use crate::quad::Quad;
 use crate::shapecache::*;
 use crate::tabbar::{TabBarItem, TabEntry};
+use crate::termwindow::selection::Selectable;
 use crate::termwindow::{
-    BorrowedShapeCacheKey, MappedQuads, RenderState, ScrollHit, ShapedInfo, TermWindowNotif,
-    UIItem, UIItemType,
+    BaseTermWindow, BorrowedShapeCacheKey, MappedQuads, RenderState, ScrollHit, ShapedInfo,
+    TermWindowNotif, UIItem, UIItemType,
 };
 use crate::utilsprites::RenderMetrics;
 use ::window::bitmaps::atlas::OutOfTextureSpace;

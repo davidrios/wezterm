@@ -1,5 +1,6 @@
 use crate::selection::{SelectionCoordinate, SelectionRange};
-use crate::termwindow::{TermWindow, TermWindowNotif};
+use crate::termwindow::selection::Selectable;
+use crate::termwindow::{BaseTermWindow, TermWindow, TermWindowNotif};
 use config::keyassignment::{ClipboardCopyDestination, QuickSelectArguments, ScrollbackEraseMode};
 use config::ConfigHandle;
 use mux::domain::DomainId;

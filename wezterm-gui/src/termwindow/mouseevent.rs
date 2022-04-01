@@ -1,6 +1,8 @@
 use crate::tabbar::TabBarItem;
 use crate::termwindow::keyevent::window_mods_to_termwiz_mods;
-use crate::termwindow::{MouseCapture, PositionedSplit, ScrollHit, UIItem, UIItemType, TMB};
+use crate::termwindow::{
+    BaseTermWindow, MouseCapture, PositionedSplit, ScrollHit, UIItem, UIItemType, TMB,
+};
 use ::window::{
     MouseButtons as WMB, MouseCursor, MouseEvent, MouseEventKind as WMEK, MousePress, WindowOps,
     WindowState,

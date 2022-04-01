@@ -16,6 +16,7 @@ use crate::scrollbar::*;
 use crate::selection::Selection;
 use crate::shapecache::*;
 use crate::tabbar::{TabBarItem, TabBarState};
+use crate::termwindow::selection::Selectable;
 use ::wezterm_term::input::{ClickPosition, MouseButton as TMB};
 use ::window::*;
 use anyhow::{anyhow, ensure, Context};
@@ -58,7 +59,7 @@ mod mouseevent;
 mod prevcursor;
 mod render;
 pub mod resize;
-mod selection;
+pub mod selection;
 pub mod spawn;
 use prevcursor::PrevCursorPos;
 use spawn::SpawnWhere;
@@ -1315,45 +1316,6 @@ impl TermWindow {
             }
         }
     }
-
-    fn check_for_dirty_lines_and_invalidate_selection(&mut self, pane: &Rc<dyn Pane>) {
-        let dims = pane.get_dimensions();
-        let viewport = self
-            .get_viewport(pane.pane_id())
-            .unwrap_or(dims.physical_top);
-        let visible_range = viewport..viewport + dims.viewport_rows as StableRowIndex;
-        let seqno = self.selection(pane.pane_id()).seqno;
-        let dirty = pane.get_changed_since(visible_range, seqno);
-
-        if dirty.is_empty() {
-            return;
-        }
-        if pane.downcast_ref::<SearchOverlay>().is_none()
-            && pane.downcast_ref::<CopyOverlay>().is_none()
-            && pane.downcast_ref::<QuickSelectOverlay>().is_none()
-        {
-            // If any of the changed lines intersect with the
-            // selection, then we need to clear the selection, but not
-            // when the search overlay is active; the search overlay
-            // marks lines as dirty to force invalidate them for
-            // highlighting purpose but also manipulates the selection
-            // and we want to allow it to retain the selection it made!
-
-            let clear_selection =
-                if let Some(selection_range) = self.selection(pane.pane_id()).range.as_ref() {
-                    let selection_rows = selection_range.rows();
-                    selection_rows.into_iter().any(|row| dirty.contains(row))
-                } else {
-                    false
-                };
-
-            if clear_selection {
-                self.selection(pane.pane_id()).range.take();
-                self.selection(pane.pane_id()).origin.take();
-                self.selection(pane.pane_id()).seqno = pane.get_current_seqno();
-            }
-        }
-    }
 }
 
 impl TermWindow {
@@ -2401,57 +2363,10 @@ impl TermWindow {
         self.activate_tab_relative(0, true)
     }
 
-    pub fn pane_state(&self, pane_id: PaneId) -> RefMut<PaneState> {
-        RefMut::map(self.pane_state.borrow_mut(), |state| {
-            state.entry(pane_id).or_insert_with(PaneState::default)
-        })
-    }
-
     pub fn tab_state(&self, tab_id: TabId) -> RefMut<TabState> {
         RefMut::map(self.tab_state.borrow_mut(), |state| {
             state.entry(tab_id).or_insert_with(TabState::default)
         })
-    }
-
-    pub fn get_viewport(&self, pane_id: PaneId) -> Option<StableRowIndex> {
-        self.pane_state(pane_id).viewport
-    }
-
-    pub fn set_viewport(
-        &mut self,
-        pane_id: PaneId,
-        position: Option<StableRowIndex>,
-        dims: RenderableDimensions,
-    ) {
-        let pos = match position {
-            Some(pos) => {
-                // Drop out of scrolling mode if we're off the bottom
-                if pos >= dims.physical_top {
-                    None
-                } else {
-                    Some(pos.max(dims.scrollback_top))
-                }
-            }
-            None => None,
-        };
-
-        let mut state = self.pane_state(pane_id);
-        if pos != state.viewport {
-            state.viewport = pos;
-
-            // This is a bit gross.  If we add other overlays that need this information,
-            // this should get extracted out into a trait
-            if let Some(overlay) = state.overlay.as_ref() {
-                if let Some(search_overlay) = overlay.downcast_ref::<SearchOverlay>() {
-                    search_overlay.viewport_changed(pos);
-                } else if let Some(copy) = overlay.downcast_ref::<CopyOverlay>() {
-                    copy.viewport_changed(pos);
-                } else if let Some(qs) = overlay.downcast_ref::<QuickSelectOverlay>() {
-                    qs.viewport_changed(pos);
-                }
-            }
-        }
-        self.window.as_ref().unwrap().invalidate();
     }
 
     fn maybe_scroll_to_bottom_for_input(&mut self, pane: &Rc<dyn Pane>) {
@@ -2665,6 +2580,66 @@ impl TermWindow {
             }
         }
         self.update_title();
+    }
+}
+
+pub trait BaseTermWindow {
+    fn invalidate_window(&self);
+    fn pane_state(&self, pane_id: PaneId) -> RefMut<PaneState>;
+
+    fn get_viewport(&self, pane_id: PaneId) -> Option<StableRowIndex> {
+        self.pane_state(pane_id).viewport
+    }
+
+    fn set_viewport(
+        &mut self,
+        pane_id: PaneId,
+        position: Option<StableRowIndex>,
+        dims: RenderableDimensions,
+    ) {
+        let pos = match position {
+            Some(pos) => {
+                // Drop out of scrolling mode if we're off the bottom
+                if pos >= dims.physical_top {
+                    None
+                } else {
+                    Some(pos.max(dims.scrollback_top))
+                }
+            }
+            None => None,
+        };
+
+        let mut state = self.pane_state(pane_id);
+        if pos != state.viewport {
+            state.viewport = pos;
+
+            // This is a bit gross.  If we add other overlays that need this information,
+            // this should get extracted out into a trait
+            if let Some(overlay) = state.overlay.as_ref() {
+                if let Some(search_overlay) = overlay.downcast_ref::<SearchOverlay>() {
+                    search_overlay.viewport_changed(pos);
+                } else if let Some(copy) = overlay.downcast_ref::<CopyOverlay>() {
+                    copy.viewport_changed(pos);
+                } else if let Some(qs) = overlay.downcast_ref::<QuickSelectOverlay>() {
+                    qs.viewport_changed(pos);
+                }
+            }
+        }
+        self.invalidate_window();
+    }
+}
+
+impl BaseTermWindow for TermWindow {
+    fn invalidate_window(&self) {
+        if let Some(ref window) = self.window {
+            window.invalidate();
+        }
+    }
+
+    fn pane_state(&self, pane_id: PaneId) -> RefMut<PaneState> {
+        RefMut::map(self.pane_state.borrow_mut(), |state| {
+            state.entry(pane_id).or_insert_with(PaneState::default)
+        })
     }
 }
 

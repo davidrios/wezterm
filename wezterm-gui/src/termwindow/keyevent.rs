@@ -1,3 +1,4 @@
+use crate::termwindow::BaseTermWindow;
 use ::window::{DeadKeyStatus, KeyCode, KeyEvent, Modifiers, RawKeyEvent, WindowOps};
 use anyhow::Context;
 use mux::pane::Pane;
